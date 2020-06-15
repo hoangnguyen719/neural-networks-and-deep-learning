@@ -128,17 +128,14 @@ class Network(object):
 
     def SGD(self, training_data, epochs, mini_batch_size, eta,
             lmbda = 0.0,
+            L1_ratio=0,
             evaluation_data=None,
             monitor_evaluation_cost=False,
             monitor_evaluation_accuracy=False,
             monitor_training_cost=False,
             monitor_training_accuracy=False,
             verbose=0):
-        """New params added:
-        ``verbose`` controls details of the printed output; default
-        is 0 (1 means minimal output; 2 means detailed printed output; 
-        otherwise no printed output).
-        
+        """     
         Train the neural network using mini-batch stochastic gradient
         descent.  The ``training_data`` is a list of tuples ``(x, y)``
         representing the training inputs and the desired outputs.  The
@@ -157,9 +154,25 @@ class Network(object):
         evaluation data at the end of each epoch. Note that the lists
         are empty if the corresponding flag is not set.
 
+        UPDATED:
+        (1) ``verbose`` controls details of the printed output; default
+        is 0 (1 means minimal output; 2 means detailed printed output; 
+        otherwise no printed output).
+
+        (2) ``L1_ratio`` controls the distribution of ``lmbda`` to
+        L1 and L2 regularization. For example, if ``lmbda``=5 and
+        ``L1_ratio`` is 0.7 then L1 param is 5*0.7=3.5 and
+        L2 param is 5*(1-0.7)=0.15. ``L1_ratio`` must be between 
+        0 and 1; if it's < 0 then it is 0, else if it's > 1 then 
+        it's converted to 1.
+
         """
         if evaluation_data: n_data = len(evaluation_data)
         n = len(training_data)
+        if L1_ratio < 0:
+            L1_ratio = 0
+        elif L1_ratio > 1:
+            L1_ratio = 1
         evaluation_cost, evaluation_accuracy = [], []
         training_cost, training_accuracy = [], []
         for j in range(epochs+1):
@@ -169,7 +182,7 @@ class Network(object):
                 for k in range(0, n, mini_batch_size)]
             for mini_batch in mini_batches:
                 self.update_mini_batch(
-                    mini_batch, eta, lmbda, len(training_data))
+                    mini_batch, eta, lmbda, len(training_data), L1_ratio)
             if verbose in [1,2]:
                 print("Epoch %s training complete" % j)
             if monitor_training_cost:
@@ -199,12 +212,18 @@ class Network(object):
         return evaluation_cost, evaluation_accuracy, \
             training_cost, training_accuracy
 
-    def update_mini_batch(self, mini_batch, eta, lmbda, n):
+    def update_mini_batch(self, mini_batch, eta, lmbda, n, L1_ratio):
         """Update the network's weights and biases by applying gradient
         descent using backpropagation to a single mini batch.  The
         ``mini_batch`` is a list of tuples ``(x, y)``, ``eta`` is the
         learning rate, ``lmbda`` is the regularization parameter, and
         ``n`` is the total size of the training data set.
+
+        UPDATED: 
+        (1) ``L1_ratio`` is the ratio between L1 and L2 
+        regularization applied. For example, if ``lmbda``=5 and
+        ``L1_ratio`` is 0.7 then L1 param is 5*0.7=3.5 and
+        L2 param is 5*(1-0.7)=0.15.
 
         """
         nabla_b = [np.zeros(b.shape) for b in self.biases]
@@ -213,7 +232,9 @@ class Network(object):
             delta_nabla_b, delta_nabla_w = self.backprop(x, y)
             nabla_b = [nb+dnb for nb, dnb in zip(nabla_b, delta_nabla_b)]
             nabla_w = [nw+dnw for nw, dnw in zip(nabla_w, delta_nabla_w)]
-        self.weights = [(1-eta*(lmbda/n))*w-(eta/len(mini_batch))*nw
+        self.weights = [(1-eta*(lmbda*(1-L1_ratio)/n))*w # w - L2
+                        -(lmbda/n)*L1_ratio*np.sign(w) # -L1
+                        -(eta/len(mini_batch))*nw
                         for w, nw in zip(self.weights, nabla_w)]
         self.biases = [b-(eta/len(mini_batch))*nb
                        for b, nb in zip(self.biases, nabla_b)]
@@ -283,20 +304,34 @@ class Network(object):
                         for (x, y) in data]
         return sum(int(x == y) for (x, y) in results)
 
-    def total_cost(self, data, lmbda, convert=False):
+    def total_cost(self, data, lmbda, L1_ratio=0, convert=False):
         """Return the total cost for the data set ``data``.  The flag
         ``convert`` should be set to False if the data set is the
         training data (the usual case), and to True if the data set is
         the validation or test data.  See comments on the similar (but
         reversed) convention for the ``accuracy`` method, above.
+
+        UPDATED:
+        (1) ``L1_ratio`` controls the distribution of ``lmbda`` to
+        L1 and L2 regularization. For example, if ``lmbda``=5 and
+        ``L1_ratio`` is 0.7 then L1 param is 5*0.7=3.5 and
+        L2 param is 5*(1-0.7)=0.15. ``L1_ratio`` must be between 
+        0 and 1; if it's < 0 then it is 0, else if it's > 1 then 
+        it's converted to 1.
         """
+        if L1_ratio < 0:
+            L1_ratio = 0
+        elif L1_ratio > 1:
+            L1_ratio = 1
         cost = 0.0
         for x, y in data:
             a = self.feedforward(x)
             if convert: y = vectorized_result(y)
             cost += self.cost.fn(a, y)/len(data)
-        cost += 0.5*(lmbda/len(data))*sum(
-            np.linalg.norm(w)**2 for w in self.weights)
+        cost += 0.5*(lmbda*(1-L1_ratio)/len(data))*sum(
+            np.linalg.norm(w)**2 for w in self.weights) # L2 cost
+        cost += lmbda*L1_ratio/len(data)*sum(
+            np.sum(np.abs(w)) for w in self.weights) # L1 cost
         return cost
 
     def save(self, filename):
