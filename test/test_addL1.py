@@ -8,9 +8,9 @@ import numpy as np
 
 training_data, validation_data, test_data =\
     map(list, mnist_loader.load_data_wrapper())
+net = network2_1.Network([784, 10])
 
 # No L1
-net = network2_1.Network([784, 10])
 net.SGD(training_data[:30000], 30, 10, 3)
 print("="*20)
 print("Accuracy unregularized: {} / {}\n".format(
@@ -32,7 +32,8 @@ for lmbda in lmbdas:
     ))
 
 """ REMARKS:
-Below is an example of the output 
+Below is an example of the output when trained
+with 30,000 training examples
 (note that the result is not always the same
 since the function is stochastic)
 

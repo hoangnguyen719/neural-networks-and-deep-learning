@@ -130,6 +130,7 @@ class Network(object):
             lmbda = 0.0,
             L1_ratio=0,
             evaluation_data=None,
+            early_stopping_n=10,
             monitor_evaluation_cost=False,
             monitor_evaluation_accuracy=False,
             monitor_training_cost=False,
@@ -166,6 +167,10 @@ class Network(object):
         0 and 1; if it's < 0 then it is 0, else if it's > 1 then 
         it's converted to 1.
 
+        (3) ``early_stopping_n``: (only used if ``evaluation_data``
+        is not None) training is stopped if accuracy on the
+        ``evaluation_data`` has not improved in the last
+        ``early_stopping_n`` epochs.
         """
         if evaluation_data: n_data = len(evaluation_data)
         n = len(training_data)
@@ -175,6 +180,8 @@ class Network(object):
             L1_ratio = 1
         evaluation_cost, evaluation_accuracy = [], []
         training_cost, training_accuracy = [], []
+        best_eval_accu = 0
+        no_imprv_cnt = 0
         for j in range(epochs+1):
             random.shuffle(training_data)
             mini_batches = [
@@ -209,6 +216,19 @@ class Network(object):
                         self.accuracy(evaluation_data), n_data))
             if verbose in [1,2]:
                 print()
+            if (evaluation_data != None) & (early_stopping_n != None):
+                if not monitor_evaluation_accuracy:
+                    accuracy = self.accuracy(evaluation_data)
+                if accuracy <= best_eval_accu:
+                    no_imprv_cnt += 1
+                else:
+                    best_eval_accu = accuracy
+                    no_imprv_cnt = 0
+                if j == epochs:
+                    print("No early stopping used!")
+                elif no_imprv_cnt >= early_stopping_n:
+                    print("Early stopped at epoch no.{}!".format(j))
+                    break
         return evaluation_cost, evaluation_accuracy, \
             training_cost, training_accuracy
 
