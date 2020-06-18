@@ -30,15 +30,15 @@ timer(t)
 # Early stopping applied
 print("\n"+"="*20)
 print("Accuracy with Early Stopping: \n")
-es_n = [5,10,20,40]
-for n in es_n:
+es_e = [5,10,20,40]
+for e in es_e:
     t = dt.now()
     net.SGD(training_data[:30000], 50, 10, 3
         , lmbda=5, L1_ratio=0
         , evaluation_data=validation_data
-        , early_stopping_n=n)
+        , early_stopping_e=e)
     print("n: {}, accuracy: {} / {}".format(
-        n, 
+        e, 
         net.accuracy(validation_data),
         len(validation_data)
     ))

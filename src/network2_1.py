@@ -126,11 +126,15 @@ class Network(object):
             a = sigmoid(np.dot(w, a)+b)
         return a
 
-    def SGD(self, training_data, epochs, mini_batch_size, eta,
+    def SGD(self, training_data, epochs, mini_batch_size, 
+            eta,
+            eta_sched_e=10,
+            eta_sched_f=2,
+            eta_stop_f=7,
             lmbda = 0.0,
             L1_ratio=0,
             evaluation_data=None,
-            early_stopping_n=10,
+            early_stopping_e=10,
             monitor_evaluation_cost=False,
             monitor_evaluation_accuracy=False,
             monitor_training_cost=False,
@@ -167,10 +171,24 @@ class Network(object):
         0 and 1; if it's < 0 then it is 0, else if it's > 1 then 
         it's converted to 1.
 
-        (3) ``early_stopping_n``: (only used if ``evaluation_data``
+        (3) ``early_stopping_e``: (only used if ``evaluation_data``
         is not None) training is stopped if accuracy on the
         ``evaluation_data`` has not improved in the last
-        ``early_stopping_n`` epochs.
+        ``early_stopping_e`` epochs.
+
+        (4) ``eta_sched_e``, ``eta_sched_f``, ``eta_stop_f``: (only 
+        used if ``evaluation_data`` is not None) parameters to schedule 
+        learning rate. If best validation accuracy does not improve
+        in the last ``eta_sched_e`` epochs, the learning rate will
+        decrease by a factor of ``eta_sched_f`` (``eta``=``eta``/
+        ``eta_sched_f``). This process repeats until the learning rate
+        has dropped to 1/(``eta_sched_f``**``eta_stop_f``) of its
+        original value.
+
+        At each epoch, early stopping is evaluated prior to learning
+        schedule, so when there are early-stopping termination
+        and learning-schedule termination at the same epoch, the algorithm
+        early-stopping message will be printed.
         """
         if evaluation_data: n_data = len(evaluation_data)
         n = len(training_data)
@@ -180,8 +198,12 @@ class Network(object):
             L1_ratio = 1
         evaluation_cost, evaluation_accuracy = [], []
         training_cost, training_accuracy = [], []
-        best_eval_accu = 0
-        no_imprv_cnt = 0
+        if eta_sched_e:
+            eta_stop = eta / (eta_sched_f**eta_stop_f)
+        best_eStop_accu = 0
+        eStop_count = 0
+        best_eta_accu = 0
+        eta_count = 0
         for j in range(epochs+1):
             random.shuffle(training_data)
             mini_batches = [
@@ -193,42 +215,61 @@ class Network(object):
             if verbose in [1,2]:
                 print("Epoch %s training complete" % j)
             if monitor_training_cost:
-                cost = self.total_cost(training_data, lmbda)
-                training_cost.append(cost)
+                t_cost = self.total_cost(training_data, lmbda)
+                training_cost.append(t_cost)
                 if verbose == 2:
-                    print("Cost on training data: {}".format(cost))
+                    print("Cost on training data: {}".format(t_cost))
             if monitor_training_accuracy:
-                accuracy = self.accuracy(training_data, convert=True)
-                training_accuracy.append(accuracy)
+                t_accuracy = self.accuracy(training_data, convert=True)
+                training_accuracy.append(t_accuracy)
                 if verbose == 2:
                     print("Accuracy on training data: {} / {}".format(
-                        accuracy, n))
+                        t_accuracy, n))
             if monitor_evaluation_cost:
-                cost = self.total_cost(evaluation_data, lmbda, convert=True)
-                evaluation_cost.append(cost)
+                e_cost = self.total_cost(evaluation_data, lmbda, convert=True)
+                evaluation_cost.append(e_cost)
                 if verbose == 2:
-                    print("Cost on evaluation data: {}".format(cost))
+                    print("Cost on evaluation data: {}".format(e_cost))
             if monitor_evaluation_accuracy:
-                accuracy = self.accuracy(evaluation_data)
-                evaluation_accuracy.append(accuracy)
+                e_accuracy = self.accuracy(evaluation_data)
+                evaluation_accuracy.append(e_accuracy)
                 if verbose == 2:
                     print("Accuracy on evaluation data: {} / {}".format(
-                        self.accuracy(evaluation_data), n_data))
+                        e_accuracy, n_data))
             if verbose in [1,2]:
                 print()
-            if (evaluation_data != None) & (early_stopping_n != None):
+            # Learning rate schedule & Early Stopping
+            if (evaluation_data != None) &\
+                ((early_stopping_e != None) | (eta_sched_e != None)):
                 if not monitor_evaluation_accuracy:
-                    accuracy = self.accuracy(evaluation_data)
-                if accuracy <= best_eval_accu:
-                    no_imprv_cnt += 1
-                else:
-                    best_eval_accu = accuracy
-                    no_imprv_cnt = 0
-                if j == epochs:
-                    print("No early stopping used!")
-                elif no_imprv_cnt >= early_stopping_n:
-                    print("Early stopped at epoch no.{}!".format(j))
-                    break
+                    e_accuracy = self.accuracy(evaluation_data)
+                # Early Stopping
+                if early_stopping_e:
+                    if e_accuracy <= best_eStop_accu:
+                        eStop_count += 1
+                    else:
+                        best_eStop_accu = e_accuracy
+                        eStop_count = 0
+                    if j == epochs:
+                        print("No early stopping used!")
+                    elif eStop_count >= early_stopping_e:
+                        print("Early stopped at epoch no.{}!".format(j))
+                        break
+                # Eta scheduling
+                if eta_sched_e:
+                    if e_accuracy <= best_eta_accu:
+                        eta_count += 1
+                    else:
+                        best_eta_accu = e_accuracy
+                        eta_count = 0
+                    if eta_count >= eta_sched_e:
+                        eta /= eta_sched_f
+                        best_eta_accu = e_accuracy
+                        eta_count = 0
+                    if eta <= eta_stop:
+                        print("Early stopped at epoch no.{}, eta={}".format(
+                            j, eta))
+                        break
         return evaluation_cost, evaluation_accuracy, \
             training_cost, training_accuracy
 
