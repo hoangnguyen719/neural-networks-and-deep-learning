@@ -95,10 +95,19 @@ class Network(object):
         biases are only ever used in computing the outputs from later
         layers.
 
+        UPDATE:
+        Included velocity parameters for bias and weight. These params
+        will be used to apply momentum-based gradient descent on the
+        weights.
+        Because this class uses ``default_weight_initializer``
+        (instead of ``large_weight_initializer``), we will not create
+        similar parameters in ``large_weight_initializer``.
         """
         self.biases = [np.random.randn(y, 1) for y in self.sizes[1:]]
         self.weights = [np.random.randn(y, x)/np.sqrt(x)
                         for x, y in zip(self.sizes[:-1], self.sizes[1:])]
+        self.bias_v = [np.zeros(b.shape) for b in self.biases]
+        self.weight_v = [np.zeros(w.shape) for w in self.weights]
 
     def large_weight_initializer(self):
         """Initialize the weights using a Gaussian distribution with mean 0
@@ -131,6 +140,7 @@ class Network(object):
             eta_sched_e=10,
             eta_sched_f=2,
             eta_stop_f=7,
+            mu=0,
             lmbda = 0.0,
             L1_ratio=0,
             evaluation_data=None,
@@ -189,6 +199,11 @@ class Network(object):
         schedule, so when there are early-stopping termination
         and learning-schedule termination at the same epoch, the algorithm
         early-stopping message will be printed.
+
+        (5) ``mu``: momentum co-efficient. Controls the amount of 
+        damping effect/friction when updating weights and biases
+        using gradient descent. When ``mu``=0 it becomes regular
+        gradient descent.
         """
         if evaluation_data: n_data = len(evaluation_data)
         n = len(training_data)
@@ -210,8 +225,8 @@ class Network(object):
                 training_data[k:k+mini_batch_size]
                 for k in range(0, n, mini_batch_size)]
             for mini_batch in mini_batches:
-                self.update_mini_batch(
-                    mini_batch, eta, lmbda, len(training_data), L1_ratio)
+                self.update_mini_batch(mini_batch, eta, lmbda
+                    , len(training_data), L1_ratio, mu)
             if verbose in [1,2]:
                 print("Epoch %s training complete" % j)
             if monitor_training_cost:
@@ -273,7 +288,7 @@ class Network(object):
         return evaluation_cost, evaluation_accuracy, \
             training_cost, training_accuracy
 
-    def update_mini_batch(self, mini_batch, eta, lmbda, n, L1_ratio):
+    def update_mini_batch(self, mini_batch, eta, lmbda, n, L1_ratio, mu):
         """Update the network's weights and biases by applying gradient
         descent using backpropagation to a single mini batch.  The
         ``mini_batch`` is a list of tuples ``(x, y)``, ``eta`` is the
@@ -293,12 +308,15 @@ class Network(object):
             delta_nabla_b, delta_nabla_w = self.backprop(x, y)
             nabla_b = [nb+dnb for nb, dnb in zip(nabla_b, delta_nabla_b)]
             nabla_w = [nw+dnw for nw, dnw in zip(nabla_w, delta_nabla_w)]
+        self.weight_v = [mu*v -(eta/len(mini_batch))*nw
+                         for v, nw in zip(self.weight_v, nabla_w)]
+        self.bias_v = [mu*v - (eta/len(mini_batch))*nb
+                       for v, nb in zip(self.bias_v, nabla_b)]
         self.weights = [(1-eta*(lmbda*(1-L1_ratio)/n))*w # w - L2
-                        -(lmbda/n)*L1_ratio*np.sign(w) # -L1
-                        -(eta/len(mini_batch))*nw
-                        for w, nw in zip(self.weights, nabla_w)]
-        self.biases = [b-(eta/len(mini_batch))*nb
-                       for b, nb in zip(self.biases, nabla_b)]
+                        -(lmbda/n)*L1_ratio*np.sign(w)   # -L1
+                        + v                              # + v
+                        for w, v in zip(self.weights, self.weight_v)]
+        self.biases = [b + v for b, v in zip(self.biases, self.bias_v)]
 
     def backprop(self, x, y):
         """Return a tuple ``(nabla_b, nabla_w)`` representing the
